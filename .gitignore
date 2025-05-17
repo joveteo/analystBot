@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Environment variables
+.env
+
+# Databases and data
+*.db
+data/*.db
+
+# OS files
+.DS_Store
+Thumbs.db 
+
+# Test folder
+tests/
