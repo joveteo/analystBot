@@ -10,7 +10,7 @@ venv/
 
 # Databases and data
 *.db
-data/*.db
+data/
 
 # OS files
 .DS_Store
