@@ -17,48 +17,56 @@ STR_ID = os.getenv("STR_ID")
 POLYGON_KEY = os.getenv("POLYGON_KEY")
 DB_PATH = "./data/live_stocks.db"
 WATCHLIST = [
-    "TLT", "BND", "SPY", "PHYS", "AAPL", "NVDA", "MSFT", "AMZN", "META", "AVGO", "GOOGL", "TSLA", "GOOG", "BRK.B",
-    "JPM", "LLY", "V", "UNH", "COST", "XOM", "MA", "WMT", "NFLX", "HD", "PG", "JNJ", "ABBV", "CRM",
-    "BAC", "ORCL", "KO", "WFC", "CVX", "CSCO", "ACN", "PLTR", "IBM", "PM", "GE", "ABT", "MCD", "LIN",
-    "MRK", "ISRG", "TMO", "GS", "ADBE", "NOW", "DIS", "PEP", "QCOM", "T", "AMD", "VZ", "AXP", "MS",
-    "CAT", "SPGI", "RTX", "UBER", "BKNG", "TXN", "INTU", "AMGN", "BSX", "C", "UNP", "PGR", "AMAT",
-    "PFE", "NEE", "LOW", "BLK", "SCHW", "TJX", "BA", "HON", "CMCSA", "SYK", "DHR", "FI", "PANW",
-    "GILD", "SBUX", "INTC"
+    "TLT",
 ]
 
-# --- DATABASE SETUP ---
+# --- DEFINATION: DATABASE PATH ---
 conn = sqlite3.connect(DB_PATH)
 c = conn.cursor()
 
-# --- POLYGON CLIENT ---
+# --- DEFINATION: POLYGON REST CLIENT KEY ---
 client = RESTClient(POLYGON_KEY)
 
-# --- UTILITY FUNCTIONS ---
+
+# --- FUNCTION: CHECK IF SYMBOL EXISTS IN DB ---
 def symbol_exists(symbol):
     c.execute("SELECT 1 FROM stock_data WHERE symbol = ? LIMIT 1", (symbol,))
     return c.fetchone() is not None
 
+
+# --- FUNCTION: GET LATEST DATE FROM DB FOR A SYMBOL ---
 def get_latest_db_date(symbol):
     c.execute("SELECT MAX(date) FROM stock_data WHERE symbol = ?", (symbol,))
     result = c.fetchone()[0]
     return result
 
+
+# --- FUNCTION: GET LAST 22 DATES FROM DB ---
 def get_db_dates(symbol, limit=22):
-    c.execute("SELECT date FROM stock_data WHERE symbol = ? ORDER BY date DESC LIMIT ?", (symbol, limit))
+    c.execute(
+        "SELECT date FROM stock_data WHERE symbol = ? ORDER BY date DESC LIMIT ?",
+        (symbol, limit),
+    )
     return [row[0] for row in c.fetchall()]
 
+
+# --- FUNCTION: FETCH OHLCV DATA FROM POLYGON ---
 def fetch_ohlc_from_polygon(symbol, start_date, end_date):
-    """Fetch daily OHLCV from Polygon.io for each day in [start_date, end_date] (inclusive), with a 21s delay after each request."""
     days = (end_date - start_date).days + 1
     for n in range(days):
         day = start_date + timedelta(days=n)
+        if day.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+            print(f"Skipping weekend for {symbol} on {day}")
+            continue
+
         date_str = day.strftime("%Y-%m-%d")
         try:
             resp = client.get_daily_open_close_agg(symbol, date_str, adjusted="true")
             if getattr(resp, "status", None) != "OK":
                 print(f"No valid data for {symbol} on {date_str}: {resp}")
-                time.sleep(21)
+                time.sleep(13)
                 continue
+
             c.execute(
                 """
                 INSERT OR REPLACE INTO stock_data (symbol, date, open_price, high_price, low_price, close_price, volume)
@@ -77,13 +85,17 @@ def fetch_ohlc_from_polygon(symbol, start_date, end_date):
             conn.commit()
         except Exception as e:
             print(f"Error fetching {symbol} on {date_str}: {e}")
-        time.sleep(21)
+        time.sleep(13)
 
-# --- MAIN LOGIC ---
+
+# --- FUNCTION: CHECK FOR 22 DAYS OF DATA ---
 def ensure_22_days_data(symbol):
     today = datetime.now().date()
     end_date = today - timedelta(days=1)
-    c.execute("SELECT date FROM stock_data WHERE symbol = ? ORDER BY date DESC LIMIT 22", (symbol,))
+    c.execute(
+        "SELECT date FROM stock_data WHERE symbol = ? ORDER BY date DESC LIMIT 22",
+        (symbol,),
+    )
     dates = [datetime.strptime(row[0], "%Y-%m-%d").date() for row in c.fetchall()]
     if len(dates) == 22 and dates[0] == end_date:
         return  # Already have 22 most recent days
@@ -91,11 +103,14 @@ def ensure_22_days_data(symbol):
     needed_dates = [end_date - timedelta(days=i) for i in range(22)]
     missing_dates = [d for d in needed_dates if d not in have_dates]
     if missing_dates:
-        print(f"Fetching missing data for {symbol}: {[d.strftime('%Y-%m-%d') for d in missing_dates]}")
+        print(
+            f"Fetching missing data for {symbol}: {[d.strftime('%Y-%m-%d') for d in missing_dates]}"
+        )
         for d in reversed(missing_dates):  # fetch oldest first
             fetch_ohlc_from_polygon(symbol, d, d)
 
-# --- BTD/STR CALCULATION ---
+
+# --- FUNCTION: BTD AND STR CALCULATION ---
 def calculate_btd_str(symbol):
     c.execute(
         """
@@ -123,7 +138,8 @@ def calculate_btd_str(symbol):
     conn.commit()
     return btd_22, str_22
 
-# --- MESSAGE GENERATION ---
+
+# --- FUNCTION: GENERATE BTD WATCHLIST ---
 def generate_btd_watchlist(symbols):
     rows = []
     for symbol in symbols:
@@ -133,9 +149,13 @@ def generate_btd_watchlist(symbols):
     now = datetime.now().strftime("%Y-%m-%d")
     if not rows:
         return f"No available symbols for {now}."
-    table = tabulate(rows, headers=["Symbol", "BTD_22"], tablefmt="plain", showindex=False)
+    table = tabulate(
+        rows, headers=["Symbol", "BTD_22"], tablefmt="plain", showindex=False
+    )
     return f"📈 ***BTD Watchlist ({now})***\n```{table}\n```"
 
+
+# --- FUNCTION: GENERATE STR WATCHLIST ---
 def generate_str_watchlist(symbols):
     rows = []
     for symbol in symbols:
@@ -145,24 +165,57 @@ def generate_str_watchlist(symbols):
     now = datetime.now().strftime("%Y-%m-%d")
     if not rows:
         return f"No available symbols for {now}."
-    table = tabulate(rows, headers=["Symbol", "STR_22"], tablefmt="plain", showindex=False)
+    table = tabulate(
+        rows, headers=["Symbol", "STR_22"], tablefmt="plain", showindex=False
+    )
     return f"📉 ***STR Watchlist ({now})***\n```{table}\n```"
+
+
+# --- FUNCTION GENERATE WATHCLIST ---
+def generate_watchlist(symbols, column_name, title, emoji):
+    rows = []
+    for symbol in symbols:
+        btd_22, str_22 = calculate_btd_str(symbol)
+        value = btd_22 if column_name == "btd_22" else str_22
+        if value is not None:
+            rows.append((symbol, value))
+    now = datetime.now().strftime("%Y-%m-%d")
+    if not rows:
+        return f"{emoji} ***{title} ({now})***\nNo available symbols."
+    table = tabulate(
+        rows, headers=["Symbol", column_name.upper()], tablefmt="plain", showindex=False
+    )
+    return f"{emoji} ***{title} ({now})***\n```{table}\n```"
+
+
+# --- FUNCTION: SEND TELEGRAM MESSAGE ---
+async def send_watchlist(bot, symbols):
+    btd_msg = generate_watchlist(symbols, "btd_22", "BTD Watchlist", "📈")
+    str_msg = generate_watchlist(symbols, "str_22", "STR Watchlist", "📉")
+    await bot.send_message(
+        chat_id=CHAT_ID, message_thread_id=BTD_ID, text=btd_msg, parse_mode="Markdown"
+    )
+    await bot.send_message(
+        chat_id=CHAT_ID, message_thread_id=STR_ID, text=str_msg, parse_mode="Markdown"
+    )
+
 
 # --- MAIN WORKFLOW ---
 async def main():
     for symbol in WATCHLIST:
         if not symbol_exists(symbol):
             print(f"Symbol {symbol} not found in DB. Fetching last 31 days...")
-            fetch_ohlc_from_polygon(symbol, datetime.now().date() - timedelta(days=30), datetime.now().date())
+            fetch_ohlc_from_polygon(
+                symbol,
+                datetime.now().date() - timedelta(days=30),
+                datetime.now().date(),
+            )
         ensure_22_days_data(symbol)
-        time.sleep(1)  # 1 second delay per symbol
-    btd_message = generate_btd_watchlist(WATCHLIST)
-    str_message = generate_str_watchlist(WATCHLIST)
+        time.sleep(1)
+
     bot = Bot(token=BOT_TOKEN)
-    # await bot.send_message(chat_id=BTD_ID, text=btd_message, parse_mode="Markdown")
-    # await bot.send_message(chat_id=STR_ID, text=str_message, parse_mode="Markdown")
-    print(btd_message)
-    print(str_message)
+    await send_watchlist(bot, WATCHLIST)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
