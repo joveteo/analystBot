@@ -18,3 +18,9 @@ Thumbs.db
 
 # Test folder
 tests/
+
+# cursor rule folder
+.cursor
+
+# VSCode
+.vscode/
