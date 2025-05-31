@@ -7,6 +7,12 @@ from polygon import RESTClient
 from telegram import Bot
 from dotenv import load_dotenv
 from tabulate import tabulate
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # --- CONFIGURATION ---
 load_dotenv()
@@ -38,7 +44,7 @@ WATCHLIST = [
     "LOW",
     "MCD",
     "SBUX",
-    "DMZ",
+    "DPZ",
     "BKNG",
     "ABNB",
     "MAR",
@@ -160,19 +166,18 @@ def get_db_dates(symbol, limit=22):
 
 
 # --- FUNCTION: FETCH OHLCV DATA FROM POLYGON ---
-def fetch_ohlc_from_polygon(symbol, start_date, end_date):
+def fetch_data_from_polygon(symbol, start_date, end_date):
     days = (end_date - start_date).days + 1
     for n in range(days):
         day = start_date + timedelta(days=n)
         if day.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
-            print(f"Skipping weekend for {symbol} on {day}")
             continue
 
         date_str = day.strftime("%Y-%m-%d")
         try:
             resp = client.get_daily_open_close_agg(symbol, date_str, adjusted="true")
             if getattr(resp, "status", None) != "OK":
-                print(f"No valid data for {symbol} on {date_str}: {resp}")
+                logging.warning(f"No valid data for {symbol} on {date_str}: {resp}")
                 time.sleep(13)
                 continue
 
@@ -193,7 +198,7 @@ def fetch_ohlc_from_polygon(symbol, start_date, end_date):
             )
             conn.commit()
         except Exception as e:
-            print(f"Error fetching {symbol} on {date_str}: {e}")
+            logging.error(f"Error fetching {symbol} on {date_str}: {e}")
         time.sleep(13)
 
 
@@ -216,7 +221,7 @@ def ensure_22_days_data(symbol):
             f"Fetching missing data for {symbol}: {[d.strftime('%Y-%m-%d') for d in missing_dates]}"
         )
         for d in reversed(missing_dates):  # fetch oldest first
-            fetch_ohlc_from_polygon(symbol, d, d)
+            fetch_data_from_polygon(symbol, d, d)
 
 
 # --- FUNCTION: BTD AND STR CALCULATION ---
@@ -230,11 +235,12 @@ def calculate_btd_str(symbol):
     )
     results = c.fetchall()
     if len(results) != 22:
-        return None, None
+        return None, None, None
     lowest_close_22 = min(row[3] for row in results)
     highest_close_22 = max(row[3] for row in results)
     high_price = results[0][2]
     low_price = results[0][1]
+    last_price = results[0][3]  # Assuming the last price is the most recent close price
     btd_22 = round(((high_price - lowest_close_22) / lowest_close_22) * 100, 2)
     str_22 = round(((low_price - highest_close_22) / highest_close_22) * 100, 2)
     c.execute(
@@ -245,54 +251,32 @@ def calculate_btd_str(symbol):
         (btd_22, str_22, symbol, symbol),
     )
     conn.commit()
-    return btd_22, str_22
-
-
-# --- FUNCTION: GENERATE BTD WATCHLIST ---
-def generate_btd_watchlist(symbols):
-    rows = []
-    for symbol in symbols:
-        btd_22, _ = calculate_btd_str(symbol)
-        if btd_22 is not None:
-            rows.append((symbol, btd_22))
-    now = datetime.now().strftime("%Y-%m-%d")
-    if not rows:
-        return f"No available symbols for {now}."
-    table = tabulate(
-        rows, headers=["Symbol", "BTD_22"], tablefmt="plain", showindex=False
-    )
-    return f"📈 ***BTD Watchlist ({now})***\n```{table}\n```"
-
-
-# --- FUNCTION: GENERATE STR WATCHLIST ---
-def generate_str_watchlist(symbols):
-    rows = []
-    for symbol in symbols:
-        _, str_22 = calculate_btd_str(symbol)
-        if str_22 is not None:
-            rows.append((symbol, str_22))
-    now = datetime.now().strftime("%Y-%m-%d")
-    if not rows:
-        return f"No available symbols for {now}."
-    table = tabulate(
-        rows, headers=["Symbol", "STR_22"], tablefmt="plain", showindex=False
-    )
-    return f"📉 ***STR Watchlist ({now})***\n```{table}\n```"
+    return btd_22, str_22, last_price
 
 
 # --- FUNCTION GENERATE WATHCLIST ---
+# add filter < 1 and > -1
 def generate_watchlist(symbols, column_name, title, emoji):
     rows = []
     for symbol in symbols:
-        btd_22, str_22 = calculate_btd_str(symbol)
+        btd_22, str_22, last_price = calculate_btd_str(symbol)
         value = btd_22 if column_name == "btd_22" else str_22
         if value is not None:
-            rows.append((symbol, value))
+            if (column_name == "btd_22" and value < 1) or (
+                column_name == "str_22" and value > -1
+            ):
+                rows.append((symbol, last_price, value))
     now = datetime.now().strftime("%Y-%m-%d")
     if not rows:
         return f"{emoji} ***{title} ({now})***\nNo available symbols."
     table = tabulate(
-        rows, headers=["Symbol", column_name.upper()], tablefmt="plain", showindex=False
+        rows,
+        headers=["Symbol", "Last", column_name.upper()],
+        tablefmt="tsv",
+        showindex=False,
+        numalign="center",
+        stralign="center",
+        floatfmt=".2f",
     )
     return f"{emoji} ***{title} ({now})***\n```{table}\n```"
 
@@ -313,8 +297,8 @@ async def send_watchlist(bot, symbols):
 async def main():
     for symbol in WATCHLIST:
         if not symbol_exists(symbol):
-            print(f"Symbol {symbol} not found in DB. Fetching last 31 days...")
-            fetch_ohlc_from_polygon(
+            logging.info(f"Symbol {symbol} not found in DB. Fetching last 31 days data")
+            fetch_data_from_polygon(
                 symbol,
                 datetime.now().date() - timedelta(days=30),
                 datetime.now().date(),
@@ -328,4 +312,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
