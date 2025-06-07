@@ -1,237 +1,320 @@
 import os
-import yfinance as yf
-import asyncio
-import pandas as pd
 import time
-from datetime import datetime
+import asyncio
+import sqlite3
+from datetime import datetime, timedelta
+from polygon import RESTClient
 from telegram import Bot
 from dotenv import load_dotenv
 from tabulate import tabulate
+import logging
+import pandas_market_calendars as mcal
 
-# Load environment variables
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+# --- CONFIGURATION ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-
-# Initialize bot
-bot = Bot(token=BOT_TOKEN)
-
-# Market List
-SNP500_TICKERS = [
+BTD_ID = os.getenv("BTD_ID")
+STR_ID = os.getenv("STR_ID")
+POLYGON_KEY = os.getenv("POLYGON_KEY")
+DB_PATH = "./data/live_stocks.db"
+WATCHLIST = [
     "TLT",
     "BND",
-    "SUI20947-USD",
-    "BTC-USD",
-    "SGD=X",
-    "D05.SI",
-    "O39.SI",
-    "C6L.SI",
-    "Z74.SI",
+    "SCHD",
     "SPY",
     "PHYS",
     "AAPL",
-    "NVDA",
     "MSFT",
-    "AMZN",
-    "META",
-    "AVGO",
-    "GOOGL",
-    "TSLA",
-    "GOOG",
-    "BRK-B",
-    "JPM",
-    "LLY",
-    "V",
-    "UNH",
-    "COST",
-    "XOM",
-    "MA",
-    "WMT",
-    "NFLX",
-    "HD",
-    "PG",
-    "JNJ",
-    "ABBV",
-    "CRM",
-    "BAC",
     "ORCL",
-    "KO",
-    "WFC",
-    "CVX",
-    "CSCO",
-    "ACN",
     "PLTR",
-    "IBM",
-    "PM",
-    "GE",
-    "ABT",
-    "MCD",
-    "LIN",
-    "MRK",
-    "ISRG",
-    "TMO",
-    "GS",
-    "ADBE",
-    "NOW",
-    "DIS",
-    "PEP",
-    "QCOM",
-    "T",
-    "AMD",
-    "VZ",
-    "AXP",
-    "MS",
-    "CAT",
-    "SPGI",
-    "RTX",
-    "UBER",
-    "BKNG",
-    "TXN",
-    "INTU",
-    "AMGN",
-    "BSX",
-    "C",
-    "UNP",
-    "PGR",
-    "AMAT",
-    "PFE",
-    "NEE",
-    "LOW",
-    "BLK",
-    "SCHW",
-    "TJX",
-    "BA",
-    "HON",
-    "CMCSA",
-    "SYK",
-    "DHR",
-    "FI",
     "PANW",
-    "GILD",
-    "SBUX",
-    "COP",
-    "ADP",
-    "TMUS",
-    "ETN",
-    "DE",
-    "MDT",
-    "VRTX",
-    "BX",
-    "BMY",
-    "ANET",
-    "MMC",
-    "PLD",
-    "LRCX",
-    "GEV",
-    "ADI",
+    "SNPS",
     "CRWD",
-    "KLAC",
-    "CB",
-    "CEG",
-    "INTC",
+    "AMZN",
+    "EBAY",
+    "TSLA",
+    "GM",
+    "F",
+    "HD",
+    "LOW",
+    "MCD",
+    "SBUX",
+    "DPZ",
+    "BKNG",
+    "ABNB",
+    "MAR",
+    "HLT",
+    "NKE",
+    "RL",
+    "LVS",
+    "WYNN",
+    "MGM",
+    "WMT",
+    "COST",
+    "TGT",
+    "PG",
+    "KO",
+    "PEP",
+    "NVDA",
+    "AMD",
+    "AVGO",
+    "QCOM",
+    "MU",
+    "CRM",
+    "INTU",
+    "NOW",
+    "DELL",
+    "HPE",
+    "CSCO",
+    "S",
+    "OKTA",
+    "FTNT",
+    "AMAT",
+    "LRCX",
+    "ACN",
+    "FSLR",
+    "GOOGL",
+    "META",
+    "TMUS",
+    "T",
+    "NFLX",
+    "DIS",
+    "SPOT",
+    "BABA",
+    "TCEHY",
+    "JD",
+    "BIDU",
+    "GE",
+    "BA",
+    "CAT",
+    "UNP",
+    "CSX",
+    "HON",
+    "MMM",
+    "ROK",
+    "AME",
+    "DAL",
+    "UAL",
+    "WM",
+    "RSG",
+    "V",
+    "MA",
+    "AXP",
+    "JPM",
+    "BAC",
+    "WFC",
+    "C",
+    "BRK-B",
+    "BX",
+    "BLK",
+    "SPGI",
+    "ICE",
+    "CME",
+    "MS",
+    "GS",
+    "SCHW",
+    "COIN",
+    "MSCI",
+    "LLY",
+    "JNJ",
+    "PFE",
+    "ABT",
+    "BSK",
+    "SPG",
+    "O",
+    "XOM",
+    "CVX",
+    "OXY",
+    "COP",
+    "LIN",
+    "SHW",
 ]
 
+# --- DEFINATION: DATABASE PATH ---
+conn = sqlite3.connect(DB_PATH)
+c = conn.cursor()
 
-# Function to fetch stock data
-def fetch_stock_data(tickers):
-    data = []
-    for ticker in tickers:
+# --- DEFINATION: POLYGON REST CLIENT KEY ---
+client = RESTClient(POLYGON_KEY)
+
+
+# --- FUNCTION: CHECK IF SYMBOL EXISTS IN DB ---
+def symbol_exists(symbol):
+    c.execute("SELECT 1 FROM stock_data WHERE symbol = ? LIMIT 1", (symbol,))
+    return c.fetchone() is not None
+
+
+# --- FUNCTION: GET LATEST DATE FROM DB FOR A SYMBOL ---
+def get_latest_db_date(symbol):
+    c.execute("SELECT MAX(date) FROM stock_data WHERE symbol = ?", (symbol,))
+    result = c.fetchone()[0]
+    return result
+
+
+# --- FUNCTION: GET LAST 22 DATES FROM DB ---
+def get_db_dates(symbol, limit=22):
+    c.execute(
+        "SELECT date FROM stock_data WHERE symbol = ? ORDER BY date DESC LIMIT ?",
+        (symbol, limit),
+    )
+    return [row[0] for row in c.fetchall()]
+
+
+# --- FUNCTION: FETCH OHLCV DATA FROM POLYGON ---
+def fetch_data_from_polygon(symbol, start_date, end_date):
+    nyse = mcal.get_calendar("NYSE")
+    trading_days = nyse.valid_days(start_date=start_date, end_date=end_date)
+    for day in trading_days:
+        date_str = day.strftime("%Y-%m-%d")
         try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="30d")
-            info = stock.info
-            pe_ratio = info.get("trailingPE")
-            pe_ratio = (
-                f"{round(pe_ratio, 2):.2f}"
-                if isinstance(pe_ratio, (int, float))
-                else "N/A"
-            )
-
-            if hist.empty:
+            resp = client.get_daily_open_close_agg(symbol, date_str, adjusted="true")
+            if getattr(resp, "status", None) != "OK":
+                logging.warning(f"No valid data for {symbol} on {date_str}: {resp}")
                 continue
 
-            close_prices = hist["Close"]
-            high_prices = hist["High"]
-            low_prices = hist["Low"]
-
-            if len(close_prices) >= 23:
-                lowest_close_22 = close_prices.iloc[-23:-1].min()
-                highest_close_22 = close_prices.iloc[-23:-1].max()
-                high_price = high_prices.iloc[-1]
-                low_price = low_prices.iloc[-1]
-
-                btd22 = round(
-                    ((high_price - lowest_close_22) / lowest_close_22) * 100, 2
-                )
-                str22 = round(
-                    ((low_price - highest_close_22) / highest_close_22) * 100, 2
-                )
-
-                data.append([ticker, btd22, str22, pe_ratio])
+            c.execute(
+                """
+                INSERT OR REPLACE INTO stock_data (symbol, date, open_price, high_price, low_price, close_price, volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    resp.symbol,
+                    resp.from_,
+                    round(resp.open, 2) if resp.open is not None else None,
+                    round(resp.high, 2) if resp.high is not None else None,
+                    round(resp.low, 2) if resp.low is not None else None,
+                    round(resp.close, 2) if resp.close is not None else None,
+                    resp.volume,
+                ),
+            )
+            conn.commit()
         except Exception as e:
-            error_message = f"Error fetching data for {ticker}: {e}\n"
-            with open("log.txt", "a") as log_file:
-                log_file.write(error_message)
-            print(error_message)
-        time.sleep(5)
-
-    df = pd.DataFrame(
-        data, columns=["Ticker", "BTD22", "STR22", "PE Ratio"]
-    )
-    return df
+            logging.error(f"Error fetching {symbol} on {date_str}: {e}")
+        time.sleep(13)
 
 
-# Function to format and send messages
-async def send_watchlist(title, description, df, filter_col, threshold, emoji):
-    df_filtered = (
-        df[df[filter_col] < threshold]
-        if filter_col == "BTD22"
-        else df[df[filter_col] > threshold]
+# --- FUNCTION: CHECK FOR 22 DAYS OF DATA ---
+def ensure_22_days_data(symbol):
+    nyse = mcal.get_calendar("NYSE")
+    today = datetime.now().date()
+    end_date = today - timedelta(days=1)
+
+    # Get all trading days up to the end date
+    all_trading_days = nyse.valid_days(
+        start_date=end_date - timedelta(days=60), end_date=end_date
     )
 
-    now = datetime.now().strftime("%Y-%m-%d")
+    # Select the last 22 trading days
+    trading_days = all_trading_days[-22:]
 
-    if df_filtered.empty:
-        message = f"{emoji} ***{title} ({now})***\nNo available tickers."
-    else:
-        table = tabulate(
-            df_filtered[["Ticker", filter_col, "PE Ratio"]],
-            headers=["Ticker", filter_col, "PE Ratio"],
-            tablefmt="plain",
-            showindex=False,
+    # Fetch dates from the database
+    c.execute(
+        "SELECT date FROM stock_data WHERE symbol = ? ORDER BY date DESC LIMIT 22",
+        (symbol,),
+    )
+    db_dates = {datetime.strptime(row[0], "%Y-%m-%d").date() for row in c.fetchall()}
+
+    # Determine missing trading days
+    missing_dates = [day for day in trading_days if day.date() not in db_dates]
+
+    if missing_dates:
+        print(
+            f"Fetching missing data for {symbol}: {[d.strftime('%Y-%m-%d') for d in missing_dates]}"
         )
-        message = f"{emoji} ***{title} ({now})***\n{description}\n```\n{table}\n```"
-
-    # Handle Telegram character limit (4096 chars)
-    if len(message) > 4000:
-        parts = [message[i : i + 4000] for i in range(0, len(message), 4000)]
-        for part in parts:
-            await bot.send_message(chat_id=CHAT_ID, text=part, parse_mode="Markdown")
-    else:
-        await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
+        for d in reversed(missing_dates):  # fetch oldest first
+            fetch_data_from_polygon(symbol, d.date(), d.date())
 
 
-# Main function
+# --- FUNCTION: BTD AND STR CALCULATION ---
+def calculate_btd_str(symbol):
+    c.execute(
+        """
+        SELECT date, low_price, high_price, close_price FROM stock_data 
+        WHERE symbol = ? ORDER BY date DESC LIMIT 23
+        """,
+        (symbol,),
+    )
+    results = c.fetchall()
+    if len(results) != 23:
+        return None, None, None
+    lowest_close_22 = min(row[3] for row in results[1:])  # Exclude the current day
+    highest_close_22 = max(row[3] for row in results[1:])  # Exclude the current day
+    high_price = results[0][2]
+    low_price = results[0][1]
+    last_price = results[0][3]  # Assuming the last price is the most recent close price
+    btd_22 = round(((high_price - lowest_close_22) / lowest_close_22) * 100, 2)
+    str_22 = round(((low_price - highest_close_22) / highest_close_22) * 100, 2)
+    c.execute(
+        """
+        UPDATE stock_data SET btd_22 = ?, str_22 = ?
+        WHERE symbol = ? AND date = (SELECT MAX(date) FROM stock_data WHERE symbol = ?)
+        """,
+        (btd_22, str_22, symbol, symbol),
+    )
+    conn.commit()
+    return btd_22, str_22, last_price
+
+
+# --- FUNCTION GENERATE WATHCLIST ---
+# add filter < 1 and > -1
+def generate_watchlist(symbols, column_name, title, emoji):
+    rows = []
+    for symbol in symbols:
+        btd_22, str_22, last_price = calculate_btd_str(symbol)
+        value = btd_22 if column_name == "btd_22" else str_22
+        if value is not None:
+            if (column_name == "btd_22" and value < 1) or (
+                column_name == "str_22" and value > -1
+            ):
+                rows.append((symbol, last_price, value))
+    now = datetime.now().strftime("%Y-%m-%d")
+    if not rows:
+        return f"{emoji} ***{title} ({now})***\nNo available symbols."
+    table = tabulate(
+        rows,
+        headers=["Symbol", "Last", column_name.upper()],
+        tablefmt="tsv",
+        showindex=False,
+        numalign="center",
+        stralign="center",
+        floatfmt=".2f",
+    )
+    return f"{emoji} ***{title} ({now})***\n```{table}\n```"
+
+
+# --- FUNCTION: SEND TELEGRAM MESSAGE ---
+async def send_watchlist(bot, symbols):
+    btd_msg = generate_watchlist(symbols, "btd_22", "BTD Watchlist", "📈")
+    str_msg = generate_watchlist(symbols, "str_22", "STR Watchlist", "📉")
+    await bot.send_message(
+        chat_id=CHAT_ID, message_thread_id=BTD_ID, text=btd_msg, parse_mode="Markdown"
+    )
+    await bot.send_message(
+        chat_id=CHAT_ID, message_thread_id=STR_ID, text=str_msg, parse_mode="Markdown"
+    )
+
+
+# --- MAIN WORKFLOW ---
 async def main():
-    df = fetch_stock_data(SNP500_TICKERS)
-    await send_watchlist(
-        "BTD22 Watchlist",
-        "BTD22 under 0 signals price is relatively low compared to the past 22 days.",
-        df,
-        "BTD22",
-        1,
-        "📈",
-    )
-    await send_watchlist(
-        "STR22 Watchlist",
-        "STR22 above 0 signals price is relatively high compared to the past 22 days.",
-        df,
-        "STR22",
-        0,
-        "📉",
-    )
+    for symbol in WATCHLIST:
+        if not symbol_exists(symbol):
+            logging.info(f"Symbol {symbol} not found in DB. Fetching last 31 days data")
+            fetch_data_from_polygon(
+                symbol,
+                datetime.now().date() - timedelta(days=30),
+                datetime.now().date(),
+            )
+        ensure_22_days_data(symbol)
+
+    bot = Bot(token=BOT_TOKEN)
+    await send_watchlist(bot, WATCHLIST)
 
 
-# Run the script
 if __name__ == "__main__":
     asyncio.run(main())
