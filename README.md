@@ -32,7 +32,7 @@ A Python script that calculates if a stock is overvalued or undervalued based on
    STR_ID=your_telegram_chat_topic_id
    TEST_CHAT_ID=...
    ```
-6. **Create a `.db` file** in the project root with your Telegram and other secrets:
+6. **Create a `live_stocks.db` file** under data/:
    ```
    import sqlite3
 
