@@ -1,10 +1,11 @@
 # analystBot
 
-A Python script that calculates if a stock is overvalued or undervalued based on the past 22 days of OHLC price. Larry William VixFix calculation was adopted to achieve this value, which I learnt from useThinkScript. The source for this calculation can be found at https://www.ireallytrade.com/newsletters/VIXFix.pdf
+A Python script that calculates if a stock is overvalued or undervalued based on the past 22 days of OHLC price. This value was derived from Larry Williams' VixFix, originally from useThinkScript. The source for this calculation can be found at https://www.ireallytrade.com/newsletters/VIXFix.pdf. 
+Values crossing the 0 mark represent overextension, which may be a reversal signal. This signal works best with due diligence. If the overextension, underlying fundamentals, and economic circumstances do not justify the move, it might indicate a reversion to a fair value. 
 
 ## Features
 - Fetches OHLC data using Polygon.io
-- Stores data in a SQLite database for easy and fast retrieval
+- Stores data in a SQLite database for efficient retrieval
 - Compiles values within specified parameters and sends alerts daily via Telegram (using crontab)
 - Curated the watchlist with the top 2 to 3 companies of each industry in the US market
 
