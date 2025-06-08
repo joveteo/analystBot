@@ -1,18 +1,18 @@
 # analystBot
 
-A Python bot for fetching end-of-day OHLC prices, storing them, and calculating 'buy the dip' and 'sell the rip' signals. Integrates with Telegram for notifications.
+A Python script that calculates if a stock is overvalued or undervalued based on the past 22 days of OHLC price. Larry William VixFix calculation was adopted to achieve this value, which I learnt from useThinkScript. The source for this calculation can be found at https://www.ireallytrade.com/newsletters/VIXFix.pdf
 
 ## Features
-- Fetches OHLC data using Yahoo Finance
-- Stores data in SQLite databases
-- Implements 'buy the dip' and 'sell the rip' strategies
-- Sends alerts via Telegram
-- Separate scripts for live and test environments
+- Fetches OHLC data using Polygon.io
+- Stores data in a SQLite database for easy and fast retrieval
+- Compiles values within specified parameters and sends alerts daily via Telegram (using crontab)
+- Curated the watchlist with the top 2 to 3 companies of each industry in the US market
 
 ## Setup
 
-1. **Clone the repository**
-2. **Create and activate a virtual environment:**
+1. **Ensure SQLite is installed**
+2. **Clone the repository**
+3. **Create and activate a virtual environment:**
    ```
    python -m venv venv
    # On Windows:
@@ -20,34 +20,76 @@ A Python bot for fetching end-of-day OHLC prices, storing them, and calculating 
    # On Mac/Linux:
    source venv/bin/activate
    ```
-3. **Install dependencies:**
+4. **Install dependencies:**
    ```
    pip install -r requirements.txt
    ```
-4. **Create a `.env` file** in the project root with your Telegram and other secrets:
+5. **Create a `.env` file** in the project root:
    ```
    BOT_TOKEN=your_telegram_bot_token
    CHAT_ID=your_telegram_chat_id
-   BTD_ID=...
-   STR_ID=...
-   WATCHLIST_INDICATORS_ID=...
+   BTD_ID=your_telegram_chat_topic_id
+   STR_ID=your_telegram_chat_topic_id
    TEST_CHAT_ID=...
    ```
-5. **Run the bot:**
+6. **Create a `.db` file** in the project root with your Telegram and other secrets:
    ```
-   python scripts/run_live.py   # For live/production
-   python scripts/run_test.py   # For testing
+   import sqlite3
+
+   DB_PATH = "./data/live_stocks.db"
+
+
+   def create_table():
+      conn = sqlite3.connect(DB_PATH)
+      c = conn.cursor()
+      c.execute(
+         """
+         CREATE TABLE IF NOT EXISTS stock_data (
+               symbol TEXT NOT NULL,
+               date TEXT NOT NULL,
+               open_price REAL,
+               high_price REAL,
+               low_price REAL,
+               close_price REAL,
+               volume INTEGER,
+               btd_22 REAL,
+               str_22 REAL,
+               PRIMARY KEY (symbol, date)
+         )
+      """
+      )
+      conn.commit()
+      conn.close()
+
+
+   if __name__ == "__main__":
+      create_table()
+      print("Database and table created successfully.")
+
+   ```
+7. **Replace send_message with print if telegram is not connected:**
+   ```
+    # await bot.send_message(
+    #     chat_id=CHAT_ID, message_thread_id=BTD_ID, text=btd_msg, parse_mode="Markdown"
+    # )
+    # await bot.send_message(
+    #     chat_id=CHAT_ID, message_thread_id=STR_ID, text=str_msg, parse_mode="Markdown"
+    # )
+    print(btd_msg)
+    print(str_msg)
+   ```
+8. **Run the bot:**
+   ```
+   python scripts/run_live.py
    ```
 
 ## Directory Structure
 ```
 analystBot/
-├── analystbot/      # Core package
-├── scripts/         # Entry points
-├── tests/           # Test scripts/data
-├── data/            # Databases
-├── requirements.txt
-├── .gitignore
-├── README.md
-└── .env             # Not committed
-``` 
+  data/
+  scripts/
+  .env
+  .gitignore
+  README.md
+  requirements.txt
+```
