@@ -3,6 +3,11 @@
 A Python script that calculates if a stock is overvalued or undervalued based on the past 22 days of OHLC price. This value was derived from Larry Williams' VixFix, originally from useThinkScript. The source for this calculation can be found at https://www.ireallytrade.com/newsletters/VIXFix.pdf. 
 Values crossing the 0 mark represent overextension, which may be a reversal signal. This signal works best with due diligence. If the overextension, underlying fundamentals, and economic circumstances do not justify the move, it might indicate a reversion to a fair value. 
 
+## Future Plan
+- Include economic data and economic indicators
+- Add more customised indicators
+- Telegram generated charts with custom indicators?
+
 ## Features
 - Fetches OHLC data using Polygon.io
 - Stores data in a SQLite database for efficient retrieval
