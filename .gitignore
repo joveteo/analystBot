@@ -10,7 +10,8 @@ venv/
 
 # Databases and data
 *.db
-data/
+data/*.db
+data.
 
 # OS files
 .DS_Store
@@ -19,8 +20,8 @@ Thumbs.db
 # Test folder
 tests/
 
-# cursor rule folder
-.cursor
-
 # VSCode
-.vscode/
+/.vscode/
+
+# cursor
+/.cursor/
