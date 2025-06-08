@@ -21,6 +21,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 BTD_ID = os.getenv("BTD_ID")
 STR_ID = os.getenv("STR_ID")
+BTD_22_THRESHOLD = 0  # Default: 0
+STR_22_THRESHOLD = 0  # Default: 0
 
 # --- POLYGON REST CLIENT KEY ---
 POLYGON_KEY = os.getenv("POLYGON_KEY")
@@ -267,8 +269,8 @@ def generate_watchlist(symbols, column_name, title, emoji):
         btd_22, str_22, last_price = calculate_btd_str(symbol)
         value = btd_22 if column_name == "btd_22" else str_22
         if value is not None:
-            if (column_name == "btd_22" and value < 1) or (
-                column_name == "str_22" and value > -1
+            if (column_name == "btd_22" and value < BTD_22_THRESHOLD) or (
+                column_name == "str_22" and value > STR_22_THRESHOLD
             ):
                 rows.append((symbol, last_price, value))
     now = datetime.now().strftime("%Y-%m-%d")
