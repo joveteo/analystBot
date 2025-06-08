@@ -11,6 +11,7 @@ venv/
 # Databases and data
 *.db
 data/*.db
+data.
 
 # OS files
 .DS_Store
@@ -18,3 +19,9 @@ Thumbs.db
 
 # Test folder
 tests/
+
+# VSCode
+/.vscode/
+
+# cursor
+/.cursor/

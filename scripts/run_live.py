@@ -10,19 +10,27 @@ from tabulate import tabulate
 import logging
 import pandas_market_calendars as mcal
 
-# Configure logging
+
+# --- CONFIGURATION ---
+REQUEST_PAUSE_DURATION = 13  # seconds
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-
-# --- CONFIGURATION ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 BTD_ID = os.getenv("BTD_ID")
 STR_ID = os.getenv("STR_ID")
+
+# --- POLYGON REST CLIENT KEY ---
 POLYGON_KEY = os.getenv("POLYGON_KEY")
+client = RESTClient(POLYGON_KEY)
+
+# --- DATABASE PATH ---
 DB_PATH = "./data/live_stocks.db"
+conn = sqlite3.connect(DB_PATH)
+c = conn.cursor()
+
 WATCHLIST = [
     "TLT",
     "BND",
@@ -110,7 +118,6 @@ WATCHLIST = [
     "BAC",
     "WFC",
     "C",
-    "BRK-B",
     "BX",
     "BLK",
     "SPGI",
@@ -125,7 +132,6 @@ WATCHLIST = [
     "JNJ",
     "PFE",
     "ABT",
-    "BSK",
     "SPG",
     "O",
     "XOM",
@@ -135,13 +141,6 @@ WATCHLIST = [
     "LIN",
     "SHW",
 ]
-
-# --- DEFINATION: DATABASE PATH ---
-conn = sqlite3.connect(DB_PATH)
-c = conn.cursor()
-
-# --- DEFINATION: POLYGON REST CLIENT KEY ---
-client = RESTClient(POLYGON_KEY)
 
 
 # --- FUNCTION: CHECK IF SYMBOL EXISTS IN DB ---
@@ -196,7 +195,7 @@ def fetch_data_from_polygon(symbol, start_date, end_date):
             conn.commit()
         except Exception as e:
             logging.error(f"Error fetching {symbol} on {date_str}: {e}")
-        time.sleep(13)
+        time.sleep(REQUEST_PAUSE_DURATION)
 
 
 # --- FUNCTION: CHECK FOR 22 DAYS OF DATA ---
@@ -262,7 +261,6 @@ def calculate_btd_str(symbol):
 
 
 # --- FUNCTION GENERATE WATHCLIST ---
-# add filter < 1 and > -1
 def generate_watchlist(symbols, column_name, title, emoji):
     rows = []
     for symbol in symbols:
