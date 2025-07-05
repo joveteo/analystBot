@@ -2,6 +2,12 @@
 __pycache__/
 *.pyc
 
+# VSCode
+/.vscode/
+
+# cursor
+/.cursor/
+
 # Virtual environment
 venv/
 
@@ -10,8 +16,7 @@ venv/
 
 # Databases and data
 *.db
-data/*.db
-data.
+data/
 
 # OS files
 .DS_Store
@@ -20,8 +25,9 @@ Thumbs.db
 # Test folder
 tests/
 
-# VSCode
-/.vscode/
+# Log folder
+logs/
 
-# cursor
-/.cursor/
+# ignore bash script for auto-update
+auto_update.sh
+GIT_SETUP_PIOS.md
