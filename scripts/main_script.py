@@ -192,7 +192,7 @@ def send_completion_summary(
 
         message += f"\n💡 Check logs for detailed information"
 
-        # send_telegram_message(message)
+        send_telegram_message(message)
         logger.info("Completion summary sent to Telegram")
 
     except Exception as e:
