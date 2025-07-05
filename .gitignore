@@ -29,5 +29,5 @@ tests/
 logs/
 
 # ignore bash script for auto-update
-auto_update.sh
+git_run_analystBot.sh
 GIT_SETUP_PIOS.md
