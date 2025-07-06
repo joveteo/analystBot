@@ -1,21 +1,28 @@
 # analystBot
-
-A Python script that calculates if a stock is overvalued or undervalued based on the past 22 days of OHLC price. This value was derived from Larry Williams' VixFix, originally from useThinkScript. The source for this calculation can be found at https://www.ireallytrade.com/newsletters/VIXFix.pdf. 
+A Python script that calculates if a stock is overvalued or undervalued based on the past 22 days of OHLC price. This value was  
 Values crossing the 0 mark represent overextension, which may be a reversal signal. This signal works best with due diligence. If the overextension, underlying fundamentals, and economic circumstances do not justify the move, it might indicate a reversion to a fair value. 
 
-## Future Plan
-- Include economic data and economic indicators
-- Add more customised indicators
-- Telegram generated charts with custom indicators?
+## To-Do List
+- New data available from polygon.io (crypto, currency trading pairs, maybe earnings tip?)
+- Update messages with proper descriptions, follow-up actions and resources for users in the telegram group
+- Fix issue with running scripts on Pi OS: cannot access the environment in the parent directory and the database in another data folder under the parent directory. had to hard code for now, but need a proper relative reference or maybe an output error
+- Set up a git pull script that auto-pulls the origin main from GitHub daily at 7 am, before the script runs at 8 am (git_status runs at midnight daily)
+- Add a version number to the telegram message -> tie with the bash script to auto pull from GitHub on pi os
+- Update calculate_indicators to include more indicators using OHLCV calculation, and update indicators to DB (future proofing)
+- Generate charts to telegram
+- Backtest strategies
 
-## Features
-- Fetches OHLC data using Polygon.io
-- Stores data in a SQLite database for efficient retrieval
-- Compiles values within specified parameters and sends alerts daily via Telegram (using crontab)
+## Bot Features
+- Multi timeframe buy and sell tip derived from Larry Williams' VixFix, originally from useThinkScript. The source for this calculation can be found at https://www.ireallytrade.com/newsletters/VIXFix.pdf.
+
+## Technical Features
+- Fetches data from Polygon.io
+- Stores data in a SQLite database
+- Compiles values within specified parameters and sends tips daily via Telegram
 - Curated the watchlist with the top 2 to 3 companies of each industry in the US market
+- Runs Rasberry Pi using Pi OS, running cron.services and Git
 
 ## Setup
-
 1. **Ensure SQLite is installed**
 2. **Clone the repository**
 3. **Create and activate a virtual environment:**
