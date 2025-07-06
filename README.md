@@ -1,6 +1,5 @@
 # analystBot
-A Python script that calculates if a stock is overvalued or undervalued based on the past 22 days of OHLC price. This value was  
-Values crossing the 0 mark represent overextension, which may be a reversal signal. This signal works best with due diligence. If the overextension, underlying fundamentals, and economic circumstances do not justify the move, it might indicate a reversion to a fair value. 
+A bot that runs on python that pushes key financial information to users on Telegram so that they can take action.
 
 ## To-Do List
 - New data available from polygon.io (crypto, currency trading pairs, maybe earnings tip?)
