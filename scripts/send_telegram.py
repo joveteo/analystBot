@@ -176,18 +176,18 @@ def generate_btd_watchlist(btd_data: List[Dict]) -> str:
     if not btd_data:
         return f"📈 ***BTD Watchlist ({now})***\nNo signals."
 
-    # Create header with same alignment as data rows
-    header = f"{'Symbol':>6}  {'Last':>7}  {'BTD22':>6}  {'BTD66':>6}  {'BTD132':>7}"
+    # Mobile-optimized header with left-aligned symbol column
+    header = f"{'Symbol':<5} {'Last':>6} {'B22':>5} {'B66':>5} {'B132':>5}"
     lines = [header]
 
     for data in btd_data:
-        symbol = data["symbol"]
+        symbol = data["symbol"][:5]  # Truncate long symbols for mobile
         last_price = data["close_price"] or 0
         btd_22 = data["btd_22"] or 0
         btd_66 = data["btd_66"] or 0
         btd_132 = data["btd_132"] or 0
 
-        line = f"{symbol:>6}  {last_price:>7.2f}  {btd_22:>6.2f}  {btd_66:>6.2f}  {btd_132:>7.2f}"
+        line = f"{symbol:<5} {last_price:>6.2f} {btd_22:>5.2f} {btd_66:>5.2f} {btd_132:>5.2f}"
         lines.append(line)
 
     formatted_table = "\n".join(lines)
@@ -248,18 +248,18 @@ def generate_str_watchlist(str_data: List[Dict]) -> str:
     if not str_data:
         return f"📉 ***STR Watchlist ({now})***\nNo signals."
 
-    # Create header with same alignment as data rows
-    header = f"{'Symbol':>6}  {'Last':>7}  {'STR22':>6}  {'STR66':>6}  {'STR132':>7}"
+    # Mobile-optimized header with left-aligned symbol column
+    header = f"{'Symbol':<5} {'Last':>6} {'S22':>5} {'S66':>5} {'S132':>5}"
     lines = [header]
 
     for data in str_data:
-        symbol = data["symbol"]
+        symbol = data["symbol"][:5]  # Truncate long symbols for mobile
         last_price = data["close_price"] or 0
         str_22 = data["str_22"] or 0
         str_66 = data["str_66"] or 0
         str_132 = data["str_132"] or 0
 
-        line = f"{symbol:>6}  {last_price:>7.2f}  {str_22:>6.2f}  {str_66:>6.2f}  {str_132:>7.2f}"
+        line = f"{symbol:<5} {last_price:>6.2f} {str_22:>5.2f} {str_66:>5.2f} {str_132:>5.2f}"
         lines.append(line)
 
     formatted_table = "\n".join(lines)
