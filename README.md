@@ -13,13 +13,19 @@ A bot that runs on python that pushes key financial information to users on Tele
 
 ## Bot Features
 - Multi timeframe buy and sell tip derived from Larry Williams' VixFix, originally from useThinkScript. The source for this calculation can be found at https://www.ireallytrade.com/newsletters/VIXFix.pdf.
+- - OHLCV data fetching from Polygon.io with NYSE calendar integration  
+- SQLite database storage with intelligent missing data detection
+- Telegram watchlist messaging with monospace table formatting
+- Daily log rotation with automatic cleanup and cross-platform support
+- Sequential script orchestration with comprehensive error handling
 
 ## Technical Features
-- Fetches data from Polygon.io
-- Stores data in a SQLite database
-- Compiles values within specified parameters and sends tips daily via Telegram
-- Curated the watchlist with the top 2 to 3 companies of each industry in the US market
-- Runs Rasberry Pi using Pi OS, running cron.services and Git
+- Fetches OHLCV data from Polygon.io with rate limit compliance (5 calls/minute)
+- Stores data in SQLite database with INSERT OR REPLACE for data integrity
+- Compiles BTD/STR indicators across 22, 66, and 132-period lookbacks
+- Sends formatted watchlists daily via Telegram with topic-based routing
+- Curated watchlist with 95 top companies across US market sectors
+- Runs on Raspberry Pi using Pi OS with cron.services and Git integration
 
 ## Setup
 1. **Ensure SQLite is installed**
@@ -36,72 +42,125 @@ A bot that runs on python that pushes key financial information to users on Tele
    ```
    pip install -r requirements.txt
    ```
-5. **Create a `.env` file** in the project root:
+5. **Create a `.env` file** in the project root with all required variables:
    ```
-   BOT_TOKEN=your_telegram_bot_token
-   CHAT_ID=your_telegram_chat_id
-   BTD_ID=your_telegram_chat_topic_id
-   STR_ID=your_telegram_chat_topic_id
-   TEST_CHAT_ID=...
+   TELEGRAM_BOT_TOKEN=
+   TELEGRAM_CHAT_ID=
+   TELEGRAM_TEST_CHAT_ID=
+   TELEGRAM_CHAT_BTD_ID=
+   TELEGRAM_CHAT_STR_ID=
+   TELEGRAM_CHAT_MARKET_INDICATORS_ID=
+   POLYGON_KEY=
+   FRED_API=
    ```
-6. **Create a `live_stocks.db` file** under data/:
+6. **Create database structure** by running:
    ```
+   python -c "
    import sqlite3
+   from pathlib import Path
 
-   DB_PATH = "./data/live_stocks.db"
-
-
-   def create_table():
-      conn = sqlite3.connect(DB_PATH)
-      c = conn.cursor()
-      c.execute(
-         """
-         CREATE TABLE IF NOT EXISTS stock_data (
-               symbol TEXT NOT NULL,
-               date TEXT NOT NULL,
-               open_price REAL,
-               high_price REAL,
-               low_price REAL,
-               close_price REAL,
-               volume INTEGER,
-               btd_22 REAL,
-               str_22 REAL,
-               PRIMARY KEY (symbol, date)
-         )
-      """
-      )
-      conn.commit()
-      conn.close()
-
-
-   if __name__ == "__main__":
-      create_table()
-      print("Database and table created successfully.")
-
+   # Create data directory
+   Path('./data').mkdir(exist_ok=True)
+   
+   # Create database and table
+   conn = sqlite3.connect('./data/live_stocks.db')
+   c = conn.cursor()
+   c.execute('''
+       CREATE TABLE IF NOT EXISTS stock_data (
+           symbol TEXT NOT NULL,
+           date TEXT NOT NULL,
+           open_price REAL,
+           high_price REAL,
+           low_price REAL,
+           close_price REAL,
+           volume INTEGER,
+           btd_22 REAL,
+           btd_66 REAL,
+           btd_132 REAL,
+           str_22 REAL,
+           str_66 REAL,
+           str_132 REAL,
+           PRIMARY KEY (symbol, date)
+       )
+   ''')
+   conn.commit()
+   conn.close()
+   print('Database and table created successfully.')
+   "
    ```
-7. **Replace send_message with print if telegram is not connected:**
+7. **Run the complete workflow:**
    ```
-    # await bot.send_message(
-    #     chat_id=CHAT_ID, message_thread_id=BTD_ID, text=btd_msg, parse_mode="Markdown"
-    # )
-    # await bot.send_message(
-    #     chat_id=CHAT_ID, message_thread_id=STR_ID, text=str_msg, parse_mode="Markdown"
-    # )
-    print(btd_msg)
-    print(str_msg)
-   ```
-8. **Run the bot:**
-   ```
-   python scripts/run_live.py
+   python scripts/main_script.py
    ```
 
 ## Directory Structure
 ```
 analystBot/
-  data/
-  scripts/
-  .env
-  .gitignore
-  README.md
-  requirements.txt
+├── data/
+│   └── live_stocks.db              # SQLite database for OHLCV and indicators
+├── logs/                           # Daily log files (auto-created)
+│   └── analystbot_YYYY-MM-DD.log  # Daily rotating log files
+├── scripts/
+│   ├── __init__.py
+│   ├── logging_config.py           # Centralized logging with daily rotation
+│   ├── main_script.py              # Orchestrator for complete workflow
+│   ├── update_db.py                # OHLCV data fetching from Polygon.io
+│   ├── calculate_indicators.py     # BTD/STR indicator calculations
+│   └── send_telegram.py            # Telegram watchlist messaging
+├── venv/                           # Virtual environment (created by user)
+├── .env                            # Environment variables (created by user)
+├── .gitignore
+├── LICENSE
+├── README.md
+└── requirements.txt                # Python dependencies
 ```
+
+## Script Execution Order
+1. **main_script.py** - Orchestrates the complete workflow
+   - Initializes logging and cleans old log files
+   - Validates prerequisites (database, .env file, script dependencies)
+   - Executes scripts sequentially with error handling
+
+2. **update_db.py** - Market data collection
+   - Fetches OHLCV data from Polygon.io for 95-symbol watchlist
+   - Manages rate limits (5 calls/minute) and trading day calculations
+   - Stores data in SQLite with missing data detection
+
+3. **calculate_indicators.py** - Technical analysis
+   - Calculates BTD/STR indicators using VixFix methodology
+   - Processes multiple timeframes (22, 66, 132 periods)
+   - Updates database with calculated indicator values
+
+4. **send_telegram.py** - Messaging and alerts
+   - Generates formatted BTD/STR watchlists
+   - Sends monospace tables to Telegram with topic routing
+   - Provides completion summaries and error notifications
+
+## Environment Variables
+| Variable | Purpose | Required |
+|----------|---------|----------|
+| `TELEGRAM_BOT_TOKEN` | Telegram bot authentication | Yes |
+| `TELEGRAM_CHAT_ID` | Main chat/channel ID | Yes |
+| `TELEGRAM_TEST_CHAT_ID` | Test environment chat ID | Optional |
+| `TELEGRAM_CHAT_BTD_ID` | BTD watchlist topic ID | Yes |
+| `TELEGRAM_CHAT_STR_ID` | STR watchlist topic ID | Yes |
+| `TELEGRAM_CHAT_MARKET_INDICATORS_ID` | Market indicators topic ID | Optional |
+| `POLYGON_KEY` | Polygon.io API key for market data | Yes |
+| `FRED_API` | FRED API key for economic data | Optional |
+
+## Cron Job Setup (Raspberry Pi)
+Add to crontab for daily execution:
+```
+# Daily analyst bot execution at 8:00 AM
+0 8 * * 1-5 cd /path/to/analystBot && /path/to/analystBot/venv/bin/python scripts/main_script.py
+
+# Weekly log cleanup at midnight Sunday
+0 0 * * 0 cd /path/to/analystBot && /path/to/analystBot/venv/bin/python -c "from scripts.logging_config import clean_old_logs; clean_old_logs()"
+```
+
+## Logging System
+- **Daily log files**: `analystbot_YYYY-MM-DD.log` in `logs/` directory
+- **Automatic cleanup**: Removes logs older than 30 days
+- **Structured format**: Timestamp, script name, level, function, line number, message
+- **Console + file output**: Real-time monitoring and persistent logging
+- **Cross-platform**: Works on Windows, macOS, Linux, Raspberry Pi OS
