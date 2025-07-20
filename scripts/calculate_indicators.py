@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
 """
-version 3.0.0
+version 3.1.0
 Indicators Calculator Script
-Calculates indicators from OHLCV data in database
-Currently only BTD and STR multiple periods are calculated
+
+Key Features:
+- BTD/STR calculation using Larry Williams' VixFix methodology
+- Multi-timeframe analysis: 22, 66, and 132-period lookbacks
+- Pandas-based data processing with 150-day rolling window requirements
+- Safe parameterized SQL queries preventing injection attacks
+- Database validation with automatic symbol discovery and processing
+- Contrarian signal generation: BTD for oversold, STR for overbought conditions
+
+Calculates BTD (Buy The Dip) and STR (Short The Rip) indicators for multiple timeframes.
+Uses Larry Williams' VixFix methodology across 22, 66, and 132-period lookbacks.
 """
 
-import os
 import sys
 import sqlite3
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple, List
 import pandas as pd
 
-# Setup simple console logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+# Import centralized logging
+from logging_config import setup_logger, log_script_start, log_script_end
+
+# Setup logging
+logger = setup_logger("calculate_indicators")
 
 # Get project paths
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -27,7 +34,14 @@ DB_PATH = PROJECT_ROOT / "data" / "live_stocks.db"
 
 
 def get_stock_data(symbol: str, days: int = 150) -> pd.DataFrame:
-    """Get stock data from database"""
+    """Retrieve OHLCV data for symbol from database.
+
+    Essential Features:
+    - Parameterized SQL query with ORDER BY date DESC for recent data
+    - LIMIT clause for efficient data retrieval (default: 150 days)
+    - Pandas DataFrame conversion with date parsing and sorting
+    - Empty DataFrame handling for missing symbols
+    """
     conn = sqlite3.connect(DB_PATH)
     query = """
         SELECT date, open_price, high_price, low_price, close_price, volume
@@ -40,44 +54,43 @@ def get_stock_data(symbol: str, days: int = 150) -> pd.DataFrame:
     conn.close()
 
     if df.empty:
-        logger.warning(f"No data found for {symbol}")
+        logger.warning(f"No data for {symbol}")
         return pd.DataFrame()
 
-    # Convert date column and sort
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").reset_index(drop=True)
-
     return df
 
 
 def calculate_btd_str(df: pd.DataFrame, period: int) -> Tuple[float, float]:
-    """Calculate BTD and STR for a given period - matches original logic"""
-    if len(df) < period + 1:  # Need period + 1 for current day + period lookback
+    """Calculate BTD and STR indicators using VixFix methodology.
+
+    Essential Features:
+    - VixFix algorithm: compares current high/low to period min/max close
+    - BTD calculation: (current_high - lowest_close_past) / lowest_close_past * 100
+    - STR calculation: (current_low - highest_close_past) / highest_close_past * 100
+    - Data sufficiency validation (period + 1 days minimum required)
+    - 2-decimal precision rounding for consistent output
+    """
+    if len(df) < period + 1:
         return None, None
 
-    # Get current day data (most recent)
     current_day = df.iloc[-1]
     high_price = current_day["high_price"]
     low_price = current_day["low_price"]
 
-    # Get past 'period' days (excluding current day)
-    past_data = df.iloc[-(period + 1) : -1]  # Last period days, excluding current
-
-    # Find lowest and highest close prices in the past period
+    past_data = df.iloc[-(period + 1) : -1]
     lowest_close = past_data["close_price"].min()
     highest_close = past_data["close_price"].max()
 
-    # Calculate BTD: (current_high - lowest_close_past) / lowest_close_past * 100
-    if lowest_close > 0:
-        btd = ((high_price - lowest_close) / lowest_close) * 100
-    else:
-        btd = None
-
-    # Calculate STR: (current_low - highest_close_past) / highest_close_past * 100
-    if highest_close > 0:
-        str_value = ((low_price - highest_close) / highest_close) * 100
-    else:
-        str_value = None
+    btd = (
+        ((high_price - lowest_close) / lowest_close) * 100 if lowest_close > 0 else None
+    )
+    str_value = (
+        ((low_price - highest_close) / highest_close) * 100
+        if highest_close > 0
+        else None
+    )
 
     return (
         round(btd, 2) if btd is not None else None,
@@ -86,23 +99,23 @@ def calculate_btd_str(df: pd.DataFrame, period: int) -> Tuple[float, float]:
 
 
 def calculate_and_update_btd(symbol: str):
-    """Calculate BTD indicators for 22, 66, 132 periods and update database"""
-    logger.info(f"Calculating BTD indicators for {symbol}...")
+    """Calculate and store BTD indicators for all timeframes.
 
-    # Get enough data for 132-period calculation + 1 current day
-    df = get_stock_data(symbol, days=140)  # Buffer for weekends/holidays
-    if df.empty or len(df) < 23:  # Need at least 23 days for BTD-22
-        logger.warning(f"Insufficient data for BTD calculation: {symbol}")
+    Essential Features:
+    - Multi-timeframe BTD calculation (22, 66, 132 periods)
+    - Data sufficiency validation (minimum 23 days required)
+    - Safe parameterized UPDATE queries with dynamic field construction
+    - Latest date targeting using MAX(date) subquery
+    - Result validation and selective database updates
+    """
+    df = get_stock_data(symbol, days=140)
+    if df.empty or len(df) < 23:
+        logger.warning(f"Insufficient data for {symbol} BTD")
         return
 
-    # Calculate BTD for all timeframes
     btd_22, _ = calculate_btd_str(df, 22)
     btd_66, _ = calculate_btd_str(df, 66)
     btd_132, _ = calculate_btd_str(df, 132)
-
-    # Update database
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
 
     update_fields = {}
     if btd_22 is not None:
@@ -113,40 +126,39 @@ def calculate_and_update_btd(symbol: str):
         update_fields["btd_132"] = btd_132
 
     if update_fields:
-        columns = list(update_fields.keys())
-        values = list(update_fields.values())
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
 
-        set_clause = ", ".join([f"{col} = ?" for col in columns])
-        query = f"""
-            UPDATE stock_data SET {set_clause}
-            WHERE symbol = ? AND date = (SELECT MAX(date) FROM stock_data WHERE symbol = ?)
-        """
+        set_clause = ", ".join([f"{col} = ?" for col in update_fields.keys()])
+        query = """UPDATE stock_data SET {} 
+                   WHERE symbol = ? AND date = (SELECT MAX(date) FROM stock_data WHERE symbol = ?)""".format(
+            set_clause
+        )
 
-        c.execute(query, values + [symbol, symbol])
+        c.execute(query, list(update_fields.values()) + [symbol, symbol])
         conn.commit()
-        logger.info(f"Updated BTD indicators for {symbol}: {update_fields}")
-
-    conn.close()
+        conn.close()
+        logger.info(f"{symbol} BTD: {update_fields}")
 
 
 def calculate_and_update_str(symbol: str):
-    """Calculate STR indicators for 22, 66, 132 periods and update database"""
-    logger.info(f"Calculating STR indicators for {symbol}...")
+    """Calculate and store STR indicators for all timeframes.
 
-    # Get enough data for 132-period calculation + 1 current day
-    df = get_stock_data(symbol, days=140)  # Buffer for weekends/holidays
-    if df.empty or len(df) < 23:  # Need at least 23 days for STR-22
-        logger.warning(f"Insufficient data for STR calculation: {symbol}")
+    Essential Features:
+    - Multi-timeframe STR calculation (22, 66, 132 periods)
+    - Data sufficiency validation (minimum 23 days required)
+    - Safe parameterized UPDATE queries with dynamic field construction
+    - Latest date targeting using MAX(date) subquery
+    - Result validation and selective database updates
+    """
+    df = get_stock_data(symbol, days=140)
+    if df.empty or len(df) < 23:
+        logger.warning(f"Insufficient data for {symbol} STR")
         return
 
-    # Calculate STR for all timeframes
     _, str_22 = calculate_btd_str(df, 22)
     _, str_66 = calculate_btd_str(df, 66)
     _, str_132 = calculate_btd_str(df, 132)
-
-    # Update database
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
 
     update_fields = {}
     if str_22 is not None:
@@ -157,35 +169,41 @@ def calculate_and_update_str(symbol: str):
         update_fields["str_132"] = str_132
 
     if update_fields:
-        columns = list(update_fields.keys())
-        values = list(update_fields.values())
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
 
-        set_clause = ", ".join([f"{col} = ?" for col in columns])
-        query = f"""
-            UPDATE stock_data SET {set_clause}
-            WHERE symbol = ? AND date = (SELECT MAX(date) FROM stock_data WHERE symbol = ?)
-        """
+        set_clause = ", ".join([f"{col} = ?" for col in update_fields.keys()])
+        query = """UPDATE stock_data SET {} 
+                   WHERE symbol = ? AND date = (SELECT MAX(date) FROM stock_data WHERE symbol = ?)""".format(
+            set_clause
+        )
 
-        c.execute(query, values + [symbol, symbol])
+        c.execute(query, list(update_fields.values()) + [symbol, symbol])
         conn.commit()
-        logger.info(f"Updated STR indicators for {symbol}: {update_fields}")
-
-    conn.close()
+        conn.close()
+        logger.info(f"{symbol} STR: {update_fields}")
 
 
 def update_custom_indicators_for_symbol(symbol: str):
-    """Update custom indicators for a single symbol - BTD and STR only"""
-    logger.info(f"Processing custom indicators for {symbol}...")
+    """Calculate BTD and STR indicators for single symbol.
 
-    # Calculate and update BTD indicators
+    Essential Features:
+    - Sequential execution of BTD and STR calculations
+    - Single symbol processing with error isolation
+    - Database update coordination for both indicator types
+    """
     calculate_and_update_btd(symbol)
-
-    # Calculate and update STR indicators
     calculate_and_update_str(symbol)
 
 
 def get_all_symbols() -> List[str]:
-    """Get all unique symbols from database"""
+    """Retrieve all unique symbols from database.
+
+    Essential Features:
+    - DISTINCT symbol query for complete database coverage
+    - Sorted output for consistent processing order
+    - Database connection handling with proper cleanup
+    """
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT DISTINCT symbol FROM stock_data")
@@ -195,38 +213,53 @@ def get_all_symbols() -> List[str]:
 
 
 def main():
-    """Main function to calculate all custom indicators"""
-    logger.info("Starting custom indicators calculation...")
-    logger.info(f"Database path: {DB_PATH}")
+    """Execute indicators calculation for all symbols.
 
+    Essential Features:
+    - Complete database symbol processing with progress tracking
+    - Database existence validation before processing
+    - Individual symbol error handling with continue-on-failure
+    - Success rate calculation and logging
+    - Exit code management based on processing results
+    """
     start_time = datetime.now()
+    log_script_start(logger, "Indicators Calculator Script")
+
+    logger.info(f"Database: {DB_PATH}")
+
+    if not DB_PATH.exists():
+        logger.error(f"Database not found: {DB_PATH}")
+        log_script_end(logger, "Indicators Calculator Script", start_time, False)
+        sys.exit(1)
 
     try:
-        # Get all symbols from database
         symbols = get_all_symbols()
-
         if not symbols:
-            logger.warning("No symbols found in database")
+            logger.warning("No symbols in database")
+            log_script_end(logger, "Indicators Calculator Script", start_time, False)
             return
 
-        logger.info(f"Processing {len(symbols)} symbols...")
+        logger.info(f"Processing {len(symbols)} symbols")
+        processed_count = 0
 
-        # Process each symbol
         for symbol in symbols:
             try:
                 update_custom_indicators_for_symbol(symbol)
+                processed_count += 1
             except Exception as e:
-                logger.error(f"Error processing {symbol}: {e}")
+                logger.error(f"Error processing {symbol}: {e}", exc_info=True)
                 continue
 
-        end_time = datetime.now()
-        duration = end_time - start_time
+        logger.info(f"Processed {processed_count}/{len(symbols)} symbols")
+        success = processed_count > 0
+        log_script_end(logger, "Indicators Calculator Script", start_time, success)
 
-        logger.info(f"Custom indicators calculation completed in {duration}")
-        logger.info(f"Successfully processed {len(symbols)} symbols")
+        if not success:
+            sys.exit(1)
 
     except Exception as e:
-        logger.error(f"Error during custom indicators calculation: {e}")
+        logger.error(f"Indicators calculation failed: {e}", exc_info=True)
+        log_script_end(logger, "Indicators Calculator Script", start_time, False)
         sys.exit(1)
 
 
