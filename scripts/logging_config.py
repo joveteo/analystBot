@@ -125,7 +125,7 @@ def clean_old_logs(days_to_keep: int = 30):
         List of deleted file names
     """
     if not LOGS_DIR.exists():
-        return
+        return []
 
     cutoff_date = datetime.now() - timedelta(days=days_to_keep)
     cleaned_files = []

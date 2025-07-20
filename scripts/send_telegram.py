@@ -176,7 +176,9 @@ def generate_btd_watchlist(btd_data: List[Dict]) -> str:
     if not btd_data:
         return f"📈 ***BTD Watchlist ({now})***\nNo signals."
 
-    lines = ["Symbol    Last    BTD22   BTD66   BTD132"]
+    # Create header with same alignment as data rows
+    header = f"{'Symbol':>6}  {'Last':>7}  {'BTD22':>6}  {'BTD66':>6}  {'BTD132':>7}"
+    lines = [header]
 
     for data in btd_data:
         symbol = data["symbol"]
@@ -246,7 +248,9 @@ def generate_str_watchlist(str_data: List[Dict]) -> str:
     if not str_data:
         return f"📉 ***STR Watchlist ({now})***\nNo signals."
 
-    lines = ["Symbol    Last    STR22   STR66   STR132"]
+    # Create header with same alignment as data rows
+    header = f"{'Symbol':>6}  {'Last':>7}  {'STR22':>6}  {'STR66':>6}  {'STR132':>7}"
+    lines = [header]
 
     for data in str_data:
         symbol = data["symbol"]
